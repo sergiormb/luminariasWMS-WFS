@@ -1,0 +1,231 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <script type="text/javascript" src="/proj4js/lib/proj4js-combined.js"></script>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="description" content="">
+    <meta name="author" content="">
+
+    <title>Sistema de información geográfica</title>
+
+    <!-- Bootstrap core CSS -->
+    <link href="css/bootstrap.css" rel="stylesheet">
+
+    <!-- Add custom CSS here -->
+    <link href="css/sb-admin.css" rel="stylesheet">
+    <link rel="stylesheet" href="font-awesome/css/font-awesome.min.css">
+    <!-- Page Specific CSS -->
+    <link rel="stylesheet" href="http://cdn.oesmith.co.uk/morris-0.4.3.min.css">
+     <style type="text/css">
+  #map {
+    width: 100%;
+    height: 400px;
+  }
+ </style>
+  <script type="text/javascript" src="OpenLayers-2.10/lib/OpenLayers.js"></script>
+
+  <script type="text/javascript" src="/OpenLayers-2.10/lib/OpenLayers.js"></script>
+
+  <script type="text/javascript">
+  Proj4js.defs["EPSG:25830"] = "+proj=utm +zone=30 +ellps=GRS80 +units=m +no_defs";
+  Proj4js.defs["EPSG:23030"] = "+proj=utm +zone=30 +ellps=intl +units=m +no_defs";
+
+  var proj_4326 = new OpenLayers.Projection('EPSG:4326');
+  var proj_25830 = new OpenLayers.Projection('EPSG:25830');
+  var proj_23030 = new OpenLayers.Projection('EPSG:23030');
+  var proj_900913 = new OpenLayers.Projection('EPSG:900913');
+
+  function init() {
+    OpenLayers.ProxyHost = "proxy.php?url=";
+    var defaultMapCenter = new OpenLayers.LonLat(-4.738952, 37.6082); // Esto tiene la proyeccion 4326 que luego al final la convertimos
+    map = new OpenLayers.Map( 'map');
+    map.projection = proj_23030; // Le añadimos al mapa nuestra proyeccion
+    map.displayProjection = proj_23030;
+    map.maxExtent = new OpenLayers.Bounds(273000, 4110000, 412000, 4290000); // El límite es el mismo que el que nos da el servicio
+    map.restrictedExtent = new OpenLayers.Bounds(345200, 4162350, 348200, 4164650); // Para que no se pueda salir del termino de La Rambla
+    map.addControl(new OpenLayers.Control.PanZoomBar());
+    map.addControl(new OpenLayers.Control.LayerSwitcher({'ascending':false}));
+    map.addControl(new OpenLayers.Control.Permalink());
+    map.addControl(new OpenLayers.Control.Permalink('permalink'));
+    map.addControl(new OpenLayers.Control.MousePosition());
+    map.addControl(new OpenLayers.Control.Scale());
+    map.addControl(new OpenLayers.Control.OverviewMap());
+    map.addControl(new OpenLayers.Control.KeyboardDefaults());
+    map.resolutions = [ 4, 2, 1, 0.1 ] // Limitie del zoom
+
+
+    var callejero = new OpenLayers.Layer.WMS(
+      "Callejero",
+      "http://mapserver.eprinsa.es/cgi-bin/callejero",
+      {
+        layers: 'Manzanas,Vias',
+        transparent: true
+      },
+      {
+        isBaseLayer: true
+      }
+    );
+    map.addLayer(callejero);
+
+    var eiel = new OpenLayers.Layer.WMS(
+      "Luminarias",
+      "http://mapserver.eprinsa.es/cgi-bin/eiel",
+      {
+        layers: 'Luminarias',
+        transparent: true
+      },
+      {
+        isBaseLayer: false
+      }
+    );
+    map.addLayer(eiel);
+
+    /* A partir de aquí funcionamiento del WFS */
+
+    wfs_options = {
+        url: 'http://mapserver.eprinsa.es/cgi-bin/eiel_wfs?',
+        params: {
+            request: "GetFeature",
+            service: "wfs",
+            version: "1.0.0",
+            typeName: "Luminarias"
+        },
+        format: new OpenLayers.Format.GML({
+            featureNS: "http://mapserver.eprinsa.es/cgi-bin/eiel",
+            geometryName: "the_geom"
+        })
+    }
+
+    var luminariasVector = new OpenLayers.Layer.Vector("Puntos Luminarias", {
+      strategies: [new OpenLayers.Strategy.BBOX()],
+        protocol: new OpenLayers.Protocol.HTTP(wfs_options) //Uso HTTP ya que por WFS el servidor de Eprinsa parece no ir bien
+    });
+
+    map.addLayer(luminariasVector);
+
+    map.setCenter(defaultMapCenter.transform(proj_4326, proj_23030), 1);
+
+    /* Funcionalidades para la seleccion de Luminarias mediante GetFeature */
+
+    getFeature_control = new OpenLayers.Control.GetFeature({
+       protocol:  new OpenLayers.Protocol.HTTP(wfs_options),
+       box: true,
+       hover: false,
+       multipleKey: "shiftKey",
+       toggleKey: "ctrlKey"
+     });
+
+    /* Eventos de seleccion */
+
+     getFeature_control.events.register("featureselected", this, function(e) {   
+      luminariasVector.addFeatures([e.feature]);
+      var feats = e.feature;
+      var tbl = document.getElementById('tablaLuminarias');
+      var lastRow = tbl.rows.length; // Para insertar al final vemos la longitud de la tabla
+      var row = tbl.insertRow(lastRow); 
+      var municipio = row.insertCell(0);
+      var potencia = row.insertCell(1);
+      var tipolampara = row.insertCell(2);
+      municipio.innerHTML = feats.attributes['municipio']; /* Se añade a la tabla una fila con la seleccion */
+      potencia.innerHTML = feats.attributes['potencia'];
+      tipolampara.innerHTML = feats.attributes['tipo_lampara'];
+
+
+     });
+
+
+     map.addControl(getFeature_control);
+     getFeature_control.activate();
+
+  }
+ </script>
+  </head>
+
+  <body onload="init()">
+
+    <div id="wrapper">
+
+      <!-- Sidebar -->
+      <nav class="navbar navbar-inverse navbar-fixed-top" role="navigation">
+        <!-- Brand and toggle get grouped for better mobile display -->
+        <div class="navbar-header">
+          <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-ex1-collapse">
+            <span class="sr-only">Toggle navigation</span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+            <span class="icon-bar"></span>
+          </button>
+          <a class="navbar-brand" href="index.html">Sistema de información geográfica de Luminarias en la Provincia de Córdoba</a>
+        </div>
+
+        <!-- Collect the nav links, forms, and other content for toggling -->
+        <div class="collapse navbar-collapse navbar-ex1-collapse">
+          <ul class="nav navbar-nav side-nav">
+            <li class="active"><a href="index.html"><i class="fa fa-bar-chart-o"></i> Mapa</a></li>
+            <li><a href="charts.html"><i class="fa fa-desktop"></i> Acerca de ...</a></li>
+          </ul>
+
+          <ul class="nav navbar-nav navbar-right navbar-user">
+            <li class="dropdown messages-dropdown">
+            </li>
+          </ul>
+        </div><!-- /.navbar-collapse -->
+      </nav>
+
+      <div id="page-wrapper">
+
+        <div class="row">
+          <div class="col-lg-12">
+             <div id="map">
+              </div>
+            <div class="alert alert-success alert-dismissable">
+              <button type="button" class="close" data-dismiss="alert" aria-hidden="true">&times;</button>
+              Selecciona las luminarias para mostrar su información al final de la página
+            </div>
+          </div>
+        </div><!-- /.row -->
+
+        <div class="row">
+          <div class="col-lg-12">
+            <div class="panel panel-primary">
+              <div class="panel-heading">
+                <h3 class="panel-title"><i class="fa fa-money"></i> Luminarias Seleccionadas</h3>
+              </div>
+              <div class="panel-body">
+                <div class="table-responsive">
+                  <table class="table table-bordered table-hover table-striped tablesorter" id="tablaLuminarias">
+                    <thead>
+                      <tr>
+                        <th>Municipio <i class="fa fa-sort"></i></th>
+                        <th>Potencia <i class="fa fa-sort"></i></th>
+                        <th>Tipo de Lampara <i class="fa fa-sort"></i></th>
+                      </tr>
+                    </thead>
+                    <tbody>
+
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </div><!-- /.row -->
+
+      </div><!-- /#page-wrapper -->
+
+    </div><!-- /#wrapper -->
+
+    <!-- JavaScript -->
+    <script src="js/jquery-1.10.2.js"></script>
+    <script src="js/bootstrap.js"></script>
+
+    <!-- Page Specific Plugins -->
+    <script src="http://cdnjs.cloudflare.com/ajax/libs/raphael/2.1.0/raphael-min.js"></script>
+    <script src="http://cdn.oesmith.co.uk/morris-0.4.3.min.js"></script>
+    <script src="js/morris/chart-data-morris.js"></script>
+    <script src="js/tablesorter/jquery.tablesorter.js"></script>
+    <script src="js/tablesorter/tables.js"></script>
+
+  </body>
+</html>

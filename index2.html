@@ -1,0 +1,133 @@
+<?php
+  header('Access-Control-Allow-Origin: *');
+?>
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
+<html xmlns="http://www.w3.org/1999/xhtml">
+ <head>
+ <script type="text/javascript" src="/proj4js/lib/proj4js-combined.js"></script>
+ <meta http-equiv="Content-Type" content="text/html; charset=utf-8"/>
+ <title>Tutorial OpenLayers</title>
+ <style type="text/css">
+  #map {
+    width: 800px;
+    height: 600px;
+  }
+ </style>
+ <script type="text/javascript" src="/OpenLayers-2.10/lib/OpenLayers.js"></script>
+
+  <script type="text/javascript">
+  Proj4js.defs["EPSG:25830"] = "+proj=utm +zone=30 +ellps=GRS80 +units=m +no_defs";
+  Proj4js.defs["EPSG:23030"] = "+proj=utm +zone=30 +ellps=intl +units=m +no_defs";
+
+  var proj_4326 = new OpenLayers.Projection('EPSG:4326');
+  var proj_25830 = new OpenLayers.Projection('EPSG:25830');
+  var proj_23030 = new OpenLayers.Projection('EPSG:23030');
+  var proj_900913 = new OpenLayers.Projection('EPSG:900913');
+
+  function init() {
+    OpenLayers.ProxyHost = "proxy.php?url=";
+    var defaultMapCenter = new OpenLayers.LonLat(-4.738952, 37.6082); // Esto tiene la proyeccion 4326 que luego al final la convertimos
+    map = new OpenLayers.Map( 'map');
+    map.projection = proj_23030; // Le añadimos al mapa nuestra proyeccion
+    map.displayProjection = proj_23030;
+    map.maxExtent = new OpenLayers.Bounds(273000, 4110000, 412000, 4290000); // El límite es el mismo que el que nos da el servicio
+    map.restrictedExtent = new OpenLayers.Bounds(345200, 4162350, 348200, 4164650); // Para que no se pueda salir del termino de La Rambla
+    map.addControl(new OpenLayers.Control.PanZoomBar());
+    map.addControl(new OpenLayers.Control.LayerSwitcher({'ascending':false}));
+    map.addControl(new OpenLayers.Control.Permalink());
+    map.addControl(new OpenLayers.Control.Permalink('permalink'));
+    map.addControl(new OpenLayers.Control.MousePosition());
+    map.addControl(new OpenLayers.Control.Scale());
+    map.addControl(new OpenLayers.Control.OverviewMap());
+    map.addControl(new OpenLayers.Control.KeyboardDefaults());
+    map.resolutions = [ 4, 2, 1, 0.1 ] // Limitie del zoom
+
+
+    var callejero = new OpenLayers.Layer.WMS(
+      "Callejero",
+      "http://mapserver.eprinsa.es/cgi-bin/callejero",
+      {
+        layers: 'Manzanas,Vias',
+        transparent: true
+      },
+      {
+        isBaseLayer: true
+      }
+    );
+    map.addLayer(callejero);
+
+    var eiel = new OpenLayers.Layer.WMS(
+      "Luminarias",
+      "http://mapserver.eprinsa.es/cgi-bin/eiel",
+      {
+        layers: 'Luminarias',
+        transparent: true
+      },
+      {
+        isBaseLayer: false
+      }
+    );
+    map.addLayer(eiel);
+
+    wfs_options = {
+        url: 'http://mapserver.eprinsa.es/cgi-bin/eiel_wfs?',
+        params: {
+            request: "GetFeature",
+            service: "wfs",
+            version: "1.0.0",
+            typeName: "Luminarias"
+        },
+        format: new OpenLayers.Format.GML({
+            featureNS: "http://mapserver.eprinsa.es/cgi-bin/eiel",
+            geometryName: "the_geom"
+        })
+    }
+
+    var luminariasVector = new OpenLayers.Layer.Vector("Puntos Luminarias", {
+      strategies: [new OpenLayers.Strategy.BBOX()],
+        protocol: new OpenLayers.Protocol.HTTP(wfs_options) //Uso HTTP ya que por WFS el servidor de Eprinsa parece no ir bien
+    });
+
+    map.addLayer(luminariasVector);
+
+    map.setCenter(defaultMapCenter.transform(proj_4326, proj_23030), 1);
+
+    /* Funcionalidades para la seleccion de Luminarias mediante GetFeature */
+
+    getFeature_control = new OpenLayers.Control.GetFeature({
+       protocol:  new OpenLayers.Protocol.HTTP(wfs_options),
+       box: true,
+       hover: false,
+       multipleKey: "shiftKey",
+       toggleKey: "ctrlKey"
+     });
+
+    /* Eventos de seleccion */
+
+     getFeature_control.events.register("featureselected", this, function(e) {
+       luminariasVector.addFeatures([e.feature]);
+       var feats = e.feature;
+
+       var Msg = "<hr>";
+       var NL  = "<br>";
+       Msg += "Municipio: " + feats.attributes['municipio'] + NL;
+       Msg += "Tipo Lampara: " + feats.attributes['tipo_lampara'] + NL;
+       Msg += "Potencia: " + feats.attributes['potencia'] + NL;
+      document.getElementById('output-id').innerHTML += Msg;
+     });
+
+
+     map.addControl(getFeature_control);
+     getFeature_control.activate();
+
+
+  }
+ </script>
+ </head>
+ <body onload="init()">
+
+ <div id="map">
+ </div>
+<div id="output-id"></div>
+ </body>
+</html>
